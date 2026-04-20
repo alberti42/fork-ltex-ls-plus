@@ -25,12 +25,14 @@ import picocli.CommandLine.Command
 import picocli.CommandLine.Option
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.io.PrintStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.util.concurrent.Callable
@@ -138,10 +140,14 @@ class LtexLanguageServerLauncher : Callable<Int> {
           this.port
         }
 
-      do {
-        val exitCode: Int? = launchServer(serverSocket, logOutputStream, port)
-        if (exitCode != null) return exitCode
-      } while (this.endless)
+      if (this.endless && this.serverType == ServerType.TcpSocket) {
+        runConcurrentAcceptLoop(serverSocket!!, logOutputStream, port)
+      } else {
+        do {
+          val exitCode: Int? = launchServer(serverSocket, logOutputStream, port)
+          if (exitCode != null) return exitCode
+        } while (this.endless)
+      }
     } finally {
       serverSocket?.close()
 
@@ -187,17 +193,17 @@ class LtexLanguageServerLauncher : Callable<Int> {
       return (if (numberOfMatches == 0) 0 else EXIT_CODE_MATCHES_FOUND)
     }
 
-    var inputStream: InputStream = System.`in`
-    var outputStream: OutputStream = System.out
-
     if (this.serverType == ServerType.TcpSocket) {
       if (serverSocket == null) throw NullPointerException("serverSocket")
       Logging.LOGGER.info(I18n.format("waitingForClientToConnectOnPort", port))
       val clientSocket: Socket = serverSocket.accept()
       Logging.LOGGER.info(I18n.format("connectedToClientOnPort", port))
-      inputStream = clientSocket.getInputStream()
-      outputStream = clientSocket.getOutputStream()
+      runTcpSession(clientSocket, logOutputStream)
+      return null
     }
+
+    var inputStream: InputStream = System.`in`
+    var outputStream: OutputStream = System.out
 
     if (logOutputStream != null) {
       inputStream = TeeInputStream(inputStream, logOutputStream)
@@ -206,6 +212,61 @@ class LtexLanguageServerLauncher : Callable<Int> {
 
     launch(inputStream, outputStream)
     return null
+  }
+
+  private fun runConcurrentAcceptLoop(
+    serverSocket: ServerSocket,
+    logOutputStream: OutputStream?,
+    port: Int,
+  ) {
+    Logging.LOGGER.info(I18n.format("waitingForClientToConnectOnPort", port))
+    var sessionId = 0L
+    while (true) {
+      val clientSocket: Socket =
+        try {
+          serverSocket.accept()
+        } catch (e: SocketException) {
+          Logging.LOGGER.info("Accept loop terminating: ${e.message}")
+          break
+        }
+      Logging.LOGGER.info(I18n.format("connectedToClientOnPort", port))
+      val id: Long = ++sessionId
+      val sessionThread = Thread(
+        {
+          try {
+            runTcpSession(clientSocket, logOutputStream)
+          } catch (e: Exception) {
+            Logging.LOGGER.warning("Session $id crashed: ${e.message}")
+          }
+        },
+        "ltex-session-$id",
+      )
+      sessionThread.isDaemon = true
+      sessionThread.start()
+    }
+  }
+
+  private fun runTcpSession(
+    clientSocket: Socket,
+    logOutputStream: OutputStream?,
+  ) {
+    try {
+      var inputStream: InputStream = clientSocket.getInputStream()
+      var outputStream: OutputStream = clientSocket.getOutputStream()
+
+      if (logOutputStream != null) {
+        inputStream = TeeInputStream(inputStream, logOutputStream)
+        outputStream = TeeOutputStream(outputStream, logOutputStream)
+      }
+
+      launch(inputStream, outputStream)
+    } finally {
+      try {
+        clientSocket.close()
+      } catch (e: IOException) {
+        Logging.LOGGER.fine("Closing client socket raised: ${e.message}")
+      }
+    }
   }
 
   enum class ServerType {
