@@ -39,6 +39,7 @@ data class Settings(
   private val _logLevel: Level? = null,
   private val _sentenceCacheSize: Long? = null,
   private val _completionEnabled: Boolean? = null,
+  private val _completionMinPrefixLength: Int? = null,
   private val _diagnosticSeverity: Map<String, DiagnosticSeverity>? = null,
   private val _checkFrequency: CheckFrequency? = null,
   private val _clearDiagnosticsWhenClosingFile: Boolean? = null,
@@ -81,6 +82,8 @@ data class Settings(
     get() = (this._sentenceCacheSize ?: DEFAULT_SENTENCE_CACHE_SIZE)
   val completionEnabled: Boolean
     get() = (this._completionEnabled ?: false)
+  val completionMinPrefixLength: Int
+    get() = (this._completionMinPrefixLength ?: DEFAULT_COMPLETION_MIN_PREFIX_LENGTH)
   val diagnosticSeverity: Map<String, DiagnosticSeverity>
     get() = (this._diagnosticSeverity ?: DEFAULT_DIAGNOSTIC_SEVERITY)
   val checkFrequency: CheckFrequency
@@ -198,6 +201,7 @@ data class Settings(
         "asciidoc",
       )
     private const val DEFAULT_SENTENCE_CACHE_SIZE = 2000L
+    private const val DEFAULT_COMPLETION_MIN_PREFIX_LENGTH = 3
     private val DEFAULT_DIAGNOSTIC_SEVERITY: Map<String, DiagnosticSeverity> =
       mapOf(Pair("default", DiagnosticSeverity.Information))
 
@@ -310,6 +314,8 @@ data class Settings(
       val sentenceCacheSize: Long? = getSettingFromJsonAsLong(jsonSettings, "sentenceCacheSize")
       val completionEnabled: Boolean? =
         getSettingFromJsonAsBoolean(jsonSettings, "completionEnabled")
+      val completionMinPrefixLength: Int? =
+        getSettingFromJsonAsLong(jsonSettings, "completionMinPrefixLength")?.toInt()
       val diagnosticSeverity: Map<String, DiagnosticSeverity>? =
         getDiagnosticSeverityFromJson(jsonSettings)
       val checkFrequency: CheckFrequency? =
@@ -341,6 +347,7 @@ data class Settings(
         logLevel,
         sentenceCacheSize,
         completionEnabled,
+        completionMinPrefixLength,
         diagnosticSeverity,
         checkFrequency,
         clearDiagnosticsWhenClosingFile,

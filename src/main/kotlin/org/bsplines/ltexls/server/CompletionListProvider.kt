@@ -68,7 +68,9 @@ class CompletionListProvider(
         annotatedTextFragment.codeFragment.code,
         codeFragmentPositionPair.second,
       )
-    if (prefix.isEmpty()) return CompletionList(emptyList())
+    if (prefix.length < this.settingsManager.settings.completionMinPrefixLength) {
+      return CompletionList(emptyList())
+    }
 
     val fullCompletionList: List<String> = getFullCompletionList(languageShortCode)
     if (fullCompletionList.isEmpty()) return CompletionList(emptyList())

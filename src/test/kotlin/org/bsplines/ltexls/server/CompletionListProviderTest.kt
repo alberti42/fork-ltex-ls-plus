@@ -59,6 +59,18 @@ class CompletionListProviderTest {
   }
 
   @Test
+  fun testCompletionListEmptyForShortPrefix() {
+    // Default `completionMinPrefixLength` is 3; a 1- or 2-character prefix
+    // should produce no candidates regardless of dictionary content.
+    val languageServer = LtexLanguageServer()
+    val document =
+      LtexTextDocumentItem(languageServer, "untitled:test.md", "markdown", 1, "we")
+    val completionList: CompletionList =
+      languageServer.completionListProvider.createCompletionList(document, Position(0, 2))
+    assertTrue(completionList.items.isEmpty())
+  }
+
+  @Test
   fun testCompletionItemsCarryTextKind() {
     // Regression: items used to be returned with a null `kind`, which made
     // clients render them with a generic / unknown icon. Dictionary entries
