@@ -99,11 +99,17 @@ class CompletionListProvider(
     document: LtexTextDocumentItem,
     position: Position,
   ): Pair<CodeFragment, Int>? {
+    // Atomically capture text and resolved position so they reflect the
+    // same document version. Without this, a concurrent didChange may
+    // update text and lineStartPosList between the two reads, yielding a
+    // prefix offset that points into the wrong revision.
+    val (code: String, pos: Int) = synchronized(document) {
+      Pair(document.text, document.convertPosition(position))
+    }
+
     val codeFragmentizer: CodeFragmentizer = CodeFragmentizer.create(document.languageId)
-    val code: String = document.text
     val codeFragments: List<CodeFragment> =
       codeFragmentizer.fragmentize(code, this.settingsManager.settings)
-    val pos: Int = document.convertPosition(position)
 
     var matchingCodeFragment: CodeFragment? = null
 

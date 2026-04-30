@@ -45,30 +45,30 @@ class LtexTextDocumentService(
     // bare `[]`. Per the LSP spec an empty array is already complete, but some clients (notably
     // outside VS Code) misread it as incomplete and keep re-requesting; the explicit object form
     // is unambiguous.
-    return if (this.languageServer.settingsManager.settings.completionEnabled) {
-      val uri: String =
-        params.textDocument?.uri ?: return CompletableFuture.completedFuture(
+    if (!this.languageServer.settingsManager.settings.completionEnabled) {
+      return CompletableFuture.completedFuture(Either.forRight(CompletionList(emptyList())))
+    }
+
+    val uri: String =
+      params.textDocument?.uri ?: return CompletableFuture.completedFuture(
+        Either.forRight(CompletionList(emptyList())),
+      )
+    val document: LtexTextDocumentItem =
+      getDocument(uri) ?: run {
+        Logging.LOGGER.warning(I18n.format("couldNotFindDocumentWithUri", uri))
+        return CompletableFuture.completedFuture(
           Either.forRight(CompletionList(emptyList())),
         )
-      val document: LtexTextDocumentItem =
-        getDocument(uri) ?: run {
-          Logging.LOGGER.warning(I18n.format("couldNotFindDocumentWithUri", uri))
-          return CompletableFuture.completedFuture(
-            Either.forRight(CompletionList(emptyList())),
-          )
-        }
+      }
 
-      CompletableFuture.completedFuture(
-        Either.forRight(
-          this.languageServer.completionListProvider.createCompletionList(
-            document,
-            params.position,
-          ),
+    return CompletableFuture.completedFuture(
+      Either.forRight(
+        this.languageServer.completionListProvider.createCompletionList(
+          document,
+          params.position,
         ),
-      )
-    } else {
-      CompletableFuture.completedFuture(Either.forRight(CompletionList(emptyList())))
-    }
+      ),
+    )
   }
 
   override fun didOpen(params: DidOpenTextDocumentParams) {
@@ -145,13 +145,20 @@ class LtexTextDocumentService(
     val document: LtexTextDocumentItem = getDocument(uri) ?: return
     if (document.beingChecked) document.cancelCheck()
 
-    this.languageServer.singleThreadExecutorService.execute {
-      document.applyTextChangeEvents(params.contentChanges)
-      document.version = params.textDocument.version
+    // Apply text changes synchronously on the dispatcher thread so any
+    // subsequent request on this thread (e.g. textDocument/completion)
+    // observes the post-edit state. Without this, applying on the
+    // executor leaves a window where completion runs against the
+    // pre-edit document. Synchronization in LtexTextDocumentItem keeps
+    // the (text, lineStartPosList) pair consistent against concurrent
+    // reads from the executor.
+    document.applyTextChangeEvents(params.contentChanges)
+    document.version = params.textDocument.version
 
-      if (
-        this.languageServer.settingsManager.settings.checkFrequency == Settings.CheckFrequency.Edit
-      ) {
+    if (
+      this.languageServer.settingsManager.settings.checkFrequency == Settings.CheckFrequency.Edit
+    ) {
+      this.languageServer.singleThreadExecutorService.execute {
         var exception: Exception? = null
 
         try {

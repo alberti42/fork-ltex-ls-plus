@@ -47,6 +47,9 @@
       <action type="fix" due-to="Andrea Alberti (@alberti42)">
         Allow `textDocument/completion` at the very last position of a document. The fragment lookup and prefix scan both used a strict `&lt;` against `code.length`, so a cursor sitting one past the last character (an unterminated document with no trailing whitespace) produced an empty list. Loosened both checks to treat the position immediately after the last character as a valid completion site.
       </action>
+      <action type="fix" due-to="Andrea Alberti (@alberti42)">
+        Fix a race between `textDocument/didChange` and `textDocument/completion` that caused completion to return matches for a stale, pre-edit prefix. `applyTextChangeEvents` was queued on the single-thread executor while completion ran synchronously on the dispatcher, so a completion request arriving after a keystroke could observe document state from before the edit. The bug was masked in clients that debounce completion or trigger it manually (VS Code defaults) but became deterministic under aggressive auto-completion (zero delay, single-character prefix). Apply text changes synchronously on the dispatcher and capture `(text, position)` under a scoped lock in the completion path so concurrent diagnostics work continues without blocking reads.
+      </action>
       <action type="update">
         Update to lsp-cli-plus 2.2.2. See [lsp-cli-plus release notes](https://github.com/ltex-plus/lsp-cli-plus/releases/tag/2.2.2).
       </action>

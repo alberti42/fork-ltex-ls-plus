@@ -21,6 +21,8 @@ import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
 import org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseMessage
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -84,5 +86,49 @@ class LtexTextDocumentServiceTest {
     val unknownDocParams = CompletionParams()
     unknownDocParams.textDocument = TextDocumentIdentifier("untitled:does-not-exist.md")
     assertEmptyCompletionListOnWire(service.completion(unknownDocParams).get())
+  }
+
+  @Test
+  fun testDidChangeAppliesSynchronouslyEvenWhenExecutorBusy() {
+    // Regression: applyTextChangeEvents previously ran on
+    // singleThreadExecutorService, so a long grammar pass blocking the
+    // executor would delay the document update — and any subsequent
+    // request on the dispatcher (e.g. textDocument/completion) would
+    // read pre-edit text. didChange now applies synchronously, so the
+    // update is visible regardless of executor state.
+    val server = LtexLanguageServer()
+    val service = LtexTextDocumentService(server)
+
+    val uri = "untitled:test.md"
+    service.didOpen(
+      DidOpenTextDocumentParams(TextDocumentItem(uri, "markdown", 1, "")),
+    )
+
+    // Block the executor with a task that does not return until released.
+    val release = CountDownLatch(1)
+    val started = CountDownLatch(1)
+    server.singleThreadExecutorService.execute {
+      started.countDown()
+      release.await()
+    }
+    // Make sure the blocker is actually running on the executor before we
+    // proceed; otherwise the queued didChange follow-up could be reordered
+    // ahead of the blocker on a fresh executor.
+    started.await(5, TimeUnit.SECONDS)
+
+    try {
+      service.didChange(
+        DidChangeTextDocumentParams(
+          VersionedTextDocumentIdentifier(uri, 2),
+          listOf(TextDocumentContentChangeEvent("wonder")),
+        ),
+      )
+
+      // The new text must be observable immediately, even though the
+      // executor is blocked and cannot run any queued work.
+      assertEquals("wonder", service.documents[uri]?.text)
+    } finally {
+      release.countDown()
+    }
   }
 }

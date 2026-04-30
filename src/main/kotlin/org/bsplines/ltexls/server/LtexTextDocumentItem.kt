@@ -107,6 +107,7 @@ class LtexTextDocumentItem(
   }
 
   @Suppress("NestedBlockDepth")
+  @Synchronized
   fun convertPosition(position: Position): Int {
     val line: Int = position.line
     val character: Int = position.character
@@ -159,6 +160,7 @@ class LtexTextDocumentItem(
     }
   }
 
+  @Synchronized
   fun convertPosition(pos: Int): Position {
     var line: Int = this.lineStartPosList.binarySearch(pos)
 
@@ -170,6 +172,7 @@ class LtexTextDocumentItem(
     return Position(line, pos - this.lineStartPosList[line])
   }
 
+  @Synchronized
   override fun setText(text: String) {
     val oldText: String = getText()
     super.setText(text)
@@ -180,6 +183,7 @@ class LtexTextDocumentItem(
     if (this.caretPosition != null) this.lastCaretChangeInstant = Instant.now()
   }
 
+  @Synchronized
   fun applyTextChangeEvents(textChangeEvents: List<TextDocumentContentChangeEvent>) {
     val oldLastCaretChangeInstant: Instant = this.lastCaretChangeInstant
 
@@ -193,6 +197,7 @@ class LtexTextDocumentItem(
     }
   }
 
+  @Synchronized
   fun applyTextChangeEvent(textChangeEvent: TextDocumentContentChangeEvent) {
     val changeRange: Range? = textChangeEvent.range
     val changeText: String = textChangeEvent.text
